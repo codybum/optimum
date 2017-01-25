@@ -14,7 +14,10 @@ public class DockerEngine {
     private List<String> container_ids;
 
     private long memAve = -1;
+    //private long workloadCpuAve = -1;
+    //private long systemCpuAve = -1;
     private double cpuAve = -1;
+    private int samples = 0;
 
     public ResourceMetric getResourceMetric(String container_id) {
         ResourceMetric metric = null;
@@ -25,11 +28,44 @@ public class DockerEngine {
 
             ContainerStats stats = docker.stats(container_id);
             //USER_HZ is typically 1/100
-            long cpuTotal = stats.cpuStats().cpuUsage().totalUsage() / 100;
+            //long cpuTotal = stats.cpuStats().cpuUsage().totalUsage() / 100;
 
-            long cpuDelta = stats.cpuStats().cpuUsage().totalUsage() - stats.precpuStats().cpuUsage().totalUsage();
-            long systemDelta = stats.cpuStats().systemCpuUsage() - stats.precpuStats().systemCpuUsage();
+            long workloadCpuDelta = (stats.cpuStats().cpuUsage().totalUsage() - stats.precpuStats().cpuUsage().totalUsage()) /100;
+            long systemCpuDelta = (stats.cpuStats().systemCpuUsage() - stats.precpuStats().systemCpuUsage()) / 100;
 
+            //System.out.println("containerDelta=" + workloadCpuDelta);
+            //System.out.println("system delta=" + systemCpuDelta);
+
+            /*
+            if(workloadCpuAve == -1) {
+                workloadCpuAve = workloadCpuDelta;
+            }
+            else {
+                workloadCpuAve = (workloadCpuAve + workloadCpuDelta)/2;
+            }
+
+            systemCpuAve = systemCpuDelta;
+            */
+
+            if(cpuAve == -1) {
+                    cpuAve = ((((double)workloadCpuDelta /(double)systemCpuDelta) * 100) + cpuAve);
+
+            }
+            else {
+                    cpuAve = ((((double)workloadCpuDelta /(double)systemCpuDelta) * 100) + cpuAve)/2;
+            }
+            //System.out.println("cpuAve=" + cpuAve);
+            /*
+            if(systemCpuAve == -1) {
+                systemCpuAve = systemCpuDelta;
+            }
+            else {
+                systemCpuAve = (systemCpuAve + systemCpuDelta)/2;
+            }
+            */
+            //long cpuDeltaAve = cpuDelta/100;
+            //System.out.println(cpuTotal + " " + cpuDeltaAve + " " + systemDelta);
+            /*
             if(cpuAve == -1) {
                 if(systemDelta == 0) {
                     cpuAve = 0.0;
@@ -47,8 +83,10 @@ public class DockerEngine {
                     cpuAve = ((((double)cpuDelta /(double)systemDelta) * 100) + cpuAve)/2;
                 }
             }
+            */
 
             long memCurrent = stats.memoryStats().usage();
+
 
             if(memAve == -1) {
                 memAve = stats.memoryStats().usage();
@@ -56,6 +94,7 @@ public class DockerEngine {
             else {
                 memAve = (memAve + stats.memoryStats().usage())/2;
             }
+
 
             long memLimit = stats.memoryStats().limit();
             long memMax = stats.memoryStats().maxUsage();
@@ -76,19 +115,19 @@ public class DockerEngine {
 
                 switch (op) {
                     case "Read":
-                        bRead = biocount;
+                        bRead = biocount + bRead;
                         break;
                     case "Write":
-                        bWrite = biocount;
+                        bWrite = biocount + bWrite;
                         break;
                     case "Sync":
-                        bSync = biocount;
+                        bSync = biocount + bSync;
                         break;
                     case "Async":
-                        bAsync = biocount;
+                        bAsync = biocount + bAsync;
                         break;
                     case "Total":
-                        bTotal = biocount;
+                        bTotal = biocount + bTotal;
                         break;
                 }
             }
@@ -117,13 +156,15 @@ public class DockerEngine {
             //long runTime, long cpuTotal, long memCurrent, long memAve, long memLimit,
             // long memMax, long diskReadTotal, long diskWriteTotal, long networkRxTotal, long networkTxTotal
 
-            metric = new ResourceMetric(container_id + "-" + String.valueOf(runTime), runTime, cpuTotal, memCurrent, memAve, memLimit, memMax, bRead, bWrite, rxBytes, txBytes);
+            metric = new ResourceMetric(container_id + "-" + String.valueOf(runTime), runTime, cpuAve, memCurrent, memAve, memLimit, memMax, bRead, bWrite, rxBytes, txBytes);
+            samples++;
         }
         catch(Exception ex) {
             ex.printStackTrace();
         }
         return metric;
     }
+
 
     public void getStats(String container_id) {
         try {
@@ -237,70 +278,82 @@ public class DockerEngine {
 
     }
 
-    public String createContainer(String image, List<String> commands) {
-        String container_id = null;
+    public ContainerConfig buildContainer(String image, List<String> envList, List<String> portList) {
+        ContainerConfig containerConfig = null;
+
         try {
+            if((envList == null) && (portList == null)) {
+                HostConfig hostConfig = HostConfig.builder().build();
+                containerConfig = ContainerConfig.builder()
+                        .hostConfig(hostConfig)
+                        .image(image)
+                        .build();
+            }
+            else if((envList != null) && (portList == null)) {
+                HostConfig hostConfig = HostConfig.builder().build();
+                containerConfig = ContainerConfig.builder()
+                        .hostConfig(hostConfig)
+                        .image(image)
+                        .env(envList)
+                        .build();
+            }
+            else if((envList == null) && (portList != null)) {
 
-            docker.pull(image);
-            HostConfig hostConfig = HostConfig.builder().build();
+                Set<String> ports = new HashSet<>(portList);
+                final Map<String, List<PortBinding>> portBindings = new HashMap<>();
+                for (String port : portList) {
+                    List<PortBinding> hostPorts = new ArrayList<>();
+                    hostPorts.add(PortBinding.of("0.0.0.0", port));
+                    portBindings.put(port, hostPorts);
+                }
 
-            // Create container with exposed ports
-            ContainerConfig containerConfig = ContainerConfig.builder()
-                    .hostConfig(hostConfig)
-                    //.image("busybox:latest").exposedPorts(ports)
-                    .image(image)
-                    .cmd(commands)
-                    //.cmd("sh", "-c", "while :; do sleep 100; done")
-                    //.cmd("sh", "-c", "while :; do ls -la; done")
-                    .build();
+                HostConfig hostConfig = HostConfig.builder().portBindings(portBindings).build();
 
-            ContainerCreation creation = docker.createContainer(containerConfig);
-            container_id = creation.id();
-            container_ids.add(container_id);
+                containerConfig = ContainerConfig.builder()
+                        .hostConfig(hostConfig)
+                        .exposedPorts(ports)
+                        .image(image)
+                        .build();
+            }
+            else if((envList != null) && (portList != null)) {
+
+                Set<String> ports = new HashSet<>(portList);
+                final Map<String, List<PortBinding>> portBindings = new HashMap<>();
+                for (String port : portList) {
+                    List<PortBinding> hostPorts = new ArrayList<>();
+                    hostPorts.add(PortBinding.of("0.0.0.0", port));
+                    portBindings.put(port, hostPorts);
+                }
+
+                HostConfig hostConfig = HostConfig.builder().portBindings(portBindings).build();
+
+                containerConfig = ContainerConfig.builder()
+                        .hostConfig(hostConfig)
+                        .exposedPorts(ports)
+                        .env(envList)
+                        .image(image)
+                        .build();
+            }
+
         }
         catch(Exception ex) {
             System.out.println(ex.getMessage());
             ex.printStackTrace();
         }
-        return container_id;
+        return containerConfig;
     }
 
-    public String createContainer(String image, List<String> commands, String[] ports) {
+    public String createContainer(String image, List<String> envList, List<String> portList) {
         String container_id = null;
         try {
 
-            // Bind container ports to host ports
-            //final String[] ports = {"80", "22"};
+            updateImage(image);
 
-            final Map<String, List<PortBinding>> portBindings = new HashMap<>();
-            for (String port : ports) {
-                List<PortBinding> hostPorts = new ArrayList<>();
-                hostPorts.add(PortBinding.of("0.0.0.0", port));
-                portBindings.put(port, hostPorts);
-            }
-
-            /*
-            // Bind container port 443 to an automatically allocated available host port.
-            List<PortBinding> randomPort = new ArrayList<>();
-            randomPort.add(PortBinding.randomPort("0.0.0.0"));
-            portBindings.put("443", randomPort);
-            */
-
-            HostConfig hostConfig = HostConfig.builder().portBindings(portBindings).build();
-
-            // Create container with exposed ports
-            ContainerConfig containerConfig = ContainerConfig.builder()
-                    .hostConfig(hostConfig)
-                    //.image("busybox:latest").exposedPorts(ports)
-                    .image(image).exposedPorts(ports)
-                    .cmd(commands)
-                    //.cmd("sh", "-c", "while :; do sleep 100; done")
-                    //.cmd("sh", "-c", "while :; do ls -la; done")
-                    .build();
-
+            ContainerConfig containerConfig = buildContainer(image,envList,portList);
             ContainerCreation creation = docker.createContainer(containerConfig);
             container_id = creation.id();
             container_ids.add(container_id);
+
         }
         catch(Exception ex) {
             System.out.println(ex.getMessage());
@@ -312,9 +365,13 @@ public class DockerEngine {
     public boolean rmContainer(String container_id) {
         boolean isRemoved = false;
         try {
+            Thread.sleep(1000);
 
             if(docker.inspectContainer(container_id).state().running()) {
                 // Kill container
+                System.out.println(docker.inspectContainer(container_id).state().toString());
+                System.out.println(docker.inspectContainer(container_id).state().running().toString());
+
                 docker.killContainer(container_id);
             }
             // Remove container
@@ -345,6 +402,30 @@ public class DockerEngine {
             ex.printStackTrace();
         }
         return returnString;
+    }
+
+    public boolean updateImage(String imageName) {
+        boolean isUpdated = false;
+        try {
+            docker.pull(imageName);
+            /*
+            while(!isUpdated) {
+                for(Image di : docker.listImages()) {
+                    System.out.println(di.id());
+                    if(di.id().equals(imageName)) {
+                        isUpdated = true;
+                    }
+                }
+            }
+            */
+
+            isUpdated = true;
+        }
+        catch(Exception ex) {
+            System.out.println(ex.getMessage());
+            ex.printStackTrace();
+        }
+        return isUpdated;
     }
 
     boolean startContainer(String container_id) {

@@ -1,10 +1,9 @@
-import com.sun.tools.corba.se.idl.ExceptionEntry;
 
 public class ResourceMetric {
 
     private String INodeId;
     private long runTime;
-    private long cpuTotal;
+    private double cpuAve;
     private long memCurrent;
     private long memAve;
     private long memLimit;
@@ -13,11 +12,12 @@ public class ResourceMetric {
     private long diskWriteTotal;
     private long networkRxTotal;
     private long networkTxTotal;
+    private double workloadUtil;
 
-    public ResourceMetric(String INodeId, long runTime, long cpuTotal, long memCurrent, long memAve, long memLimit, long memMax, long diskReadTotal, long diskWriteTotal, long networkRxTotal, long networkTxTotal) {
+    public ResourceMetric(String INodeId, long runTime, double cpuAve, long memCurrent, long memAve, long memLimit, long memMax, long diskReadTotal, long diskWriteTotal, long networkRxTotal, long networkTxTotal) {
         this.INodeId = INodeId;
         this.runTime = runTime;
-        this.cpuTotal = cpuTotal;
+        this.cpuAve = cpuAve;
         this.memCurrent = memCurrent;
         this.memAve = memAve;
         this.memLimit = memLimit;
@@ -26,36 +26,54 @@ public class ResourceMetric {
         this.diskWriteTotal = diskWriteTotal;
         this.networkRxTotal = networkRxTotal;
         this.networkTxTotal = networkTxTotal;
+        workloadUtil = -1;
     }
 
+    public ResourceMetric(String INodeId, double workloadUtil) {
+        this.INodeId = INodeId;
+        this.workloadUtil = workloadUtil;
+    }
 
-    public double getCPU() {
-        double cpu = 0.0;
+    public void setINodeId(String newINodeId) {
         try {
-            if(runTime != 0) {
-                cpu = cpuTotal / runTime;
-            }
+            INodeId = newINodeId;
         }
         catch(Exception ex) {
             ex.printStackTrace();
         }
-        return cpu;
     }
 
-    public double getMemory() {
-        double memory = 0.0;
-        try {
-            memory = memAve;
-        }
-        catch(Exception ex) {
-            ex.printStackTrace();
-        }
-        return memory;
+    public long getRuntime() {
+        return runTime;
     }
 
-    public double getDiskRead() {
+    public double getWorkloadUtil() {
+        return workloadUtil;
+    }
 
-        double disk = 0.0;
+    public double getCpuAve() {
+        return cpuAve;
+    }
+
+    public long getMemAve() {
+        return memAve;
+    }
+
+    public long getMemLimit() {
+        return memLimit;
+    }
+
+    public long getMemMax() {
+        return memMax;
+    }
+
+    public long getMemCurrent() {
+        return memCurrent;
+    }
+
+    public long getDiskRead() {
+
+        long disk = 0;
         try {
             if(runTime != 0) {
                 disk = diskReadTotal / runTime;
@@ -68,12 +86,12 @@ public class ResourceMetric {
 
     }
 
-    public double getWriteRead() {
+    public long getDiskWrite() {
 
-        double disk = 0.0;
+        long disk = 0;
         try {
             if(runTime != 0) {
-                disk = diskReadTotal / runTime;
+                disk = diskWriteTotal / runTime;
             }
         }
         catch(Exception ex) {
@@ -83,8 +101,8 @@ public class ResourceMetric {
 
     }
 
-    public double getNetworkRx() {
-        double network = 0.0;
+    public long getNetworkRx() {
+        long network = 0;
         try {
             if(runTime != 0) {
                 network = networkRxTotal / runTime;
@@ -96,8 +114,8 @@ public class ResourceMetric {
         return network;
     }
 
-    public double getNetworkTx() {
-        double network = 0.0;
+    public long getNetworkTx() {
+        long network = 0;
         try {
             if(runTime != 0) {
                 network = networkTxTotal / runTime;
@@ -109,7 +127,84 @@ public class ResourceMetric {
         return network;
     }
 
+    public void addWorkloadCost(double addWorkloadUtil) {
+        try {
+            if(workloadUtil == -1) {
+                workloadUtil = addWorkloadUtil;
+            }
+            else {
+                workloadUtil = (workloadUtil + addWorkloadUtil) / 2;
+            }
+        }
+        catch(Exception ex) {
+            ex.printStackTrace();
+        }
+    }
+
+    public void addCpuAve(double addCpuAve) {
+        try {
+            cpuAve = (cpuAve + addCpuAve) / 2;
+        }
+        catch(Exception ex) {
+            ex.printStackTrace();
+        }
+    }
+
+    public void addMemory(long addMemAve) {
+        try {
+            memAve = (memAve + addMemAve)/2;
+        }
+        catch(Exception ex) {
+            ex.printStackTrace();
+        }
+
+    }
+
+    public void addDiskRead(long addDiskReadTotal) {
+
+        try {
+            diskReadTotal = (diskReadTotal + addDiskReadTotal) / 2;
+        }
+        catch(Exception ex) {
+            ex.printStackTrace();
+        }
+    }
+
+    public void addDiskWrite(long addDiskWriteTotal) {
+
+        try {
+            diskWriteTotal = (diskWriteTotal + addDiskWriteTotal) / 2;
+        }
+        catch(Exception ex) {
+            ex.printStackTrace();
+        }
+    }
+
+    public void addNetworkRx(long addNetworkRxTotal) {
+        try {
+            networkRxTotal = (networkRxTotal + addNetworkRxTotal) / 2;
+        }
+        catch(Exception ex) {
+            ex.printStackTrace();
+        }
+    }
+
+    public void addNetworkTx(long addNetworkTxTotal) {
+        try {
+                networkTxTotal = (networkTxTotal + addNetworkTxTotal) / 2;
+        }
+        catch(Exception ex) {
+            ex.printStackTrace();
+        }
+    }
+
     public String getINodeId() {
         return INodeId;
     }
+
+    @Override
+    public String toString() {
+        return String.format("id=" + getINodeId() + "runtime=" + getRuntime() + " workloadcost=" + getWorkloadUtil() + " cpuave=" + getCpuAve() + " memave=" + getMemAve() + " memmax=" + getMemMax() +  " diskRead=" + getDiskRead() + " diskWrite=" + getDiskWrite() + " neworkRx=" + getNetworkRx() + " networkTx=" + getNetworkTx());
+    }
+
 }

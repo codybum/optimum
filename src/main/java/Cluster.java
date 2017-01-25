@@ -14,7 +14,7 @@ public class Cluster {
 
         List<ResourceMetricWrapper> clusterInput = new ArrayList<>(metrics.size());
         for(ResourceMetric rm : metrics) {
-            clusterInput.add(new ResourceMetricWrapper(rm));
+            clusterInput.add(new ResourceMetricWrapper(rm,1));
         }
 
         // initialize a new clustering algorithm.
